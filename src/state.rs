@@ -1,8 +1,13 @@
-use wgpu::PrimitiveTopology;
+use wgpu::{
+    PrimitiveTopology,
+    util::DeviceExt,
+};
 use winit::{
     event::*,
     window::Window,
 };
+
+use crate::vertex::Vertex;
 
 /// Hold state with important information
 pub struct State {
@@ -14,8 +19,10 @@ pub struct State {
     pub size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
-    challenge_render_pipeline: wgpu::RenderPipeline,
+    //challenge_render_pipeline: wgpu::RenderPipeline,
     use_challenge_render_pipeline: bool,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
 }
 
 impl State {
@@ -93,8 +100,8 @@ impl State {
                     module: &shader,
                     // function name in shader.wgsl for [[stage(vertex)]]
                     entry_point: "main",
-                    // already specified in the shader
-                    buffers: &[],
+                    // specify memory layout
+                    buffers: &[Vertex::desc()],
 
                 },
                 // needed to sotre color data to swap_chain
@@ -129,7 +136,7 @@ impl State {
                 }
             }
         );
-
+        /*
         // overwrite challenge shader file to shader
         let shader = device.create_shader_module(
             &wgpu::ShaderModuleDescriptor {
@@ -194,6 +201,17 @@ impl State {
                 }
             }
         );
+        */
+
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(crate::vertex::VERTICES),
+                usage: wgpu::BufferUsage::VERTEX,
+            }
+        );
+
+        let num_vertices = crate::vertex::VERTICES.len() as u32;
 
         Self {
             surface,
@@ -204,8 +222,10 @@ impl State {
             size,
             clear_color: wgpu::Color { r: 0.6, g: 0.6, b: 0.1, a: 1.0 },
             render_pipeline,
-            challenge_render_pipeline,
+            //challenge_render_pipeline,
             use_challenge_render_pipeline: false,
+            vertex_buffer,
+            num_vertices,
         }
     }
 
@@ -277,13 +297,17 @@ impl State {
             });
 
         // set pipeline
+        /*
         if self.use_challenge_render_pipeline {
             render_pass.set_pipeline(&self.challenge_render_pipeline);
         } else {
             render_pass.set_pipeline(&self.render_pipeline);
-        }
+    }
+         */
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         // draw triangle
-        render_pass.draw(0..3, 0..1);
+        render_pass.draw(0..self.num_vertices, 0..1);
 
         // drop so encoder isn't borrowed mutually anymore
         drop(render_pass);

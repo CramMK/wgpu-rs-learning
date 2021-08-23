@@ -5,6 +5,7 @@ use winit::{
 };
 
 mod state;
+mod vertex;
 
 use crate::state::State;
 
