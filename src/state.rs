@@ -1,3 +1,4 @@
+use wgpu::PrimitiveTopology;
 use winit::{
     event::*,
     window::Window,
@@ -12,24 +13,32 @@ pub struct State {
     swap_chain: wgpu::SwapChain,
     pub size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
+    render_pipeline: wgpu::RenderPipeline,
+    challenge_render_pipeline: wgpu::RenderPipeline,
+    use_challenge_render_pipeline: bool,
 }
 
 impl State {
     pub async fn new(window: &Window) -> Self {
         // actual screen size
         let size = window.inner_size();
+
         // handle to gpu
+        // PRIMARY, VULKAN, DX12, METAL, BROWSER_WEBGPU
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+
         // a surface to draw to
         let surface = unsafe { instance.create_surface(window) };
-        // get a working adapter for the current system
+
+        // get a physical adapter for the current system
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
             },
         ).await.unwrap();
-        // adapter device and queue
+
+        // logical device and command queue to work with
         let (device, queue) = adapter.request_device(
             &wgpu::DeviceDescriptor {
                 // no special features required
@@ -40,6 +49,7 @@ impl State {
             },
             None, // Trace path
         ).await.unwrap();
+
         // description of the swap_chain
         let sc_desc = wgpu::SwapChainDescriptor {
             // how textures will be used
@@ -52,8 +62,138 @@ impl State {
             // how to sync with the display
             present_mode: wgpu::PresentMode::Fifo,
         };
+
         // actually create a swap_chain
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
+
+        // load shader file
+        let shader = device.create_shader_module(
+            &wgpu::ShaderModuleDescriptor {
+                label: Some("Shader"),
+                flags: wgpu::ShaderFlags::all(),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            }
+        );
+
+        // TODO
+        let render_pipeline_layout = device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layput"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            }
+        );
+
+        // add everything to the render_pipeline
+        let render_pipeline = device.create_render_pipeline(
+            &wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    // function name in shader.wgsl for [[stage(vertex)]]
+                    entry_point: "main",
+                    // already specified in the shader
+                    buffers: &[],
+
+                },
+                // needed to sotre color data to swap_chain
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "main",
+                    // setup of color outputs
+                    targets: &[wgpu::ColorTargetState {
+                        format: sc_desc.format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrite::ALL,
+                    }],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    // triangle facing forward when Counter Clock Wise
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    clamp_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    // only use 1 sample => no extra sampling
+                    count: 1,
+                    // use all
+                    mask: !0,
+                    // not using anti aliasing
+                    alpha_to_coverage_enabled: false,
+                }
+            }
+        );
+
+        // overwrite challenge shader file to shader
+        let shader = device.create_shader_module(
+            &wgpu::ShaderModuleDescriptor {
+                label: Some("Shader"),
+                flags: wgpu::ShaderFlags::all(),
+                source: wgpu::ShaderSource::Wgsl(
+                    include_str!("challenge_shader.wgsl").into()),
+            }
+        );
+
+        // TODO
+        let render_pipeline_layout = device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layput"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            }
+        );
+
+        // add everything to the challnge_render_pipeline
+        let challenge_render_pipeline = device.create_render_pipeline(
+            &wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    // function name in shader.wgsl for [[stage(vertex)]]
+                    entry_point: "main",
+                    // already specified in the shader
+                    buffers: &[],
+
+                },
+                // needed to sotre color data to swap_chain
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "main",
+                    // setup of color outputs
+                    targets: &[wgpu::ColorTargetState {
+                        format: sc_desc.format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrite::ALL,
+                    }],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    // triangle facing forward when Counter Clock Wise
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    clamp_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    // only use 1 sample => no extra sampling
+                    count: 1,
+                    // use all
+                    mask: !0,
+                    // not using anti aliasing
+                    alpha_to_coverage_enabled: false,
+                }
+            }
+        );
 
         Self {
             surface,
@@ -63,6 +203,9 @@ impl State {
             swap_chain,
             size,
             clear_color: wgpu::Color { r: 0.6, g: 0.6, b: 0.1, a: 1.0 },
+            render_pipeline,
+            challenge_render_pipeline,
+            use_challenge_render_pipeline: false,
         }
     }
 
@@ -80,9 +223,20 @@ impl State {
     pub fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                let x = (position.x as f64) / 1000 as f64;
-                let y = (position.y as f64) / 1000 as f64;
+                let x = (position.x as f64) / self.size.width as f64;
+                let y = (position.y as f64) / self.size.height as f64;
                 self.clear_color = wgpu::Color { r: x, g: x, b: y, a: 1.0};
+                true
+            },
+            WindowEvent::KeyboardInput {
+                input: KeyboardInput {
+                    state: ElementState::Pressed,
+                    virtual_keycode: Some(VirtualKeyCode::Space),
+                    ..
+                },
+                ..
+            } => {
+                self.use_challenge_render_pipeline = !self.use_challenge_render_pipeline;
                 true
             }
             _ => false
@@ -106,7 +260,7 @@ impl State {
                     label: Some("Render Encoder"),
                 });
         // create a render_pass
-        let _render_pass = encoder.begin_render_pass(
+        let mut render_pass = encoder.begin_render_pass(
             &wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[
@@ -122,8 +276,17 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
+        // set pipeline
+        if self.use_challenge_render_pipeline {
+            render_pass.set_pipeline(&self.challenge_render_pipeline);
+        } else {
+            render_pass.set_pipeline(&self.render_pipeline);
+        }
+        // draw triangle
+        render_pass.draw(0..3, 0..1);
+
         // drop so encoder isn't borrowed mutually anymore
-        drop(_render_pass);
+        drop(render_pass);
 
         // submit finished command buffers
         self.queue.submit(std::iter::once(encoder.finish()));
