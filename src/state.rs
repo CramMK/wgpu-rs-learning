@@ -7,22 +7,27 @@ use winit::{
     window::Window,
 };
 
-use crate::vertex::Vertex;
+use crate::{texture, vertex::Vertex};
 
 /// Hold state with important information
 pub struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
+
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
     pub size: winit::dpi::PhysicalSize<u32>,
-    clear_color: wgpu::Color,
+
+
     render_pipeline: wgpu::RenderPipeline,
-    //challenge_render_pipeline: wgpu::RenderPipeline,
-    use_challenge_render_pipeline: bool,
+
     vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
+
+    aqua_bind_group: wgpu::BindGroup,
+    aqua_texture: texture::Texture,
 }
 
 impl State {
@@ -73,6 +78,55 @@ impl State {
         // actually create a swap_chain
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
+        let aqua_bytes = include_bytes!("../img/aqua.png");
+        let aqua_texture = texture::Texture::from_bytes(&device, &queue, aqua_bytes, "aqua").unwrap();
+
+        let texture_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler {
+                            comparison: false,
+                            filtering: true,
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            }
+        );
+
+        // bind groups can be changed on the fly, as long as they're in the same layout
+        // every texture and sampler needs to be added to a bindgroup
+        let aqua_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&aqua_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&aqua_texture.sampler),
+                    }
+                ],
+                label: Some("diffuse_bind_group"),
+            }
+        );
+
         // load shader file
         let shader = device.create_shader_module(
             &wgpu::ShaderModuleDescriptor {
@@ -82,11 +136,10 @@ impl State {
             }
         );
 
-        // TODO
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layput"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&texture_bind_group_layout],
                 push_constant_ranges: &[],
             }
         );
@@ -136,72 +189,6 @@ impl State {
                 }
             }
         );
-        /*
-        // overwrite challenge shader file to shader
-        let shader = device.create_shader_module(
-            &wgpu::ShaderModuleDescriptor {
-                label: Some("Shader"),
-                flags: wgpu::ShaderFlags::all(),
-                source: wgpu::ShaderSource::Wgsl(
-                    include_str!("challenge_shader.wgsl").into()),
-            }
-        );
-
-        // TODO
-        let render_pipeline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layput"),
-                bind_group_layouts: &[],
-                push_constant_ranges: &[],
-            }
-        );
-
-        // add everything to the challnge_render_pipeline
-        let challenge_render_pipeline = device.create_render_pipeline(
-            &wgpu::RenderPipelineDescriptor {
-                label: Some("Render Pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    // function name in shader.wgsl for [[stage(vertex)]]
-                    entry_point: "main",
-                    // already specified in the shader
-                    buffers: &[],
-
-                },
-                // needed to sotre color data to swap_chain
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "main",
-                    // setup of color outputs
-                    targets: &[wgpu::ColorTargetState {
-                        format: sc_desc.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrite::ALL,
-                    }],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    // triangle facing forward when Counter Clock Wise
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    clamp_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState {
-                    // only use 1 sample => no extra sampling
-                    count: 1,
-                    // use all
-                    mask: !0,
-                    // not using anti aliasing
-                    alpha_to_coverage_enabled: false,
-                }
-            }
-        );
-        */
 
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -211,7 +198,15 @@ impl State {
             }
         );
 
-        let num_vertices = crate::vertex::VERTICES.len() as u32;
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(crate::vertex::INDICES),
+                usage: wgpu::BufferUsage::INDEX,
+            }
+        );
+
+        let num_indices = crate::vertex::INDICES.len() as u32;
 
         Self {
             surface,
@@ -220,12 +215,12 @@ impl State {
             sc_desc, // saved, so we can create a new swap_chain later
             swap_chain,
             size,
-            clear_color: wgpu::Color { r: 0.6, g: 0.6, b: 0.1, a: 1.0 },
             render_pipeline,
-            //challenge_render_pipeline,
-            use_challenge_render_pipeline: false,
             vertex_buffer,
-            num_vertices,
+            index_buffer,
+            num_indices,
+            aqua_bind_group,
+            aqua_texture,
         }
     }
 
@@ -242,23 +237,23 @@ impl State {
     /// Idicate, whether an event has been fully processed
     pub fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
-            WindowEvent::CursorMoved { position, .. } => {
-                let x = (position.x as f64) / self.size.width as f64;
-                let y = (position.y as f64) / self.size.height as f64;
-                self.clear_color = wgpu::Color { r: x, g: x, b: y, a: 1.0};
-                true
-            },
-            WindowEvent::KeyboardInput {
-                input: KeyboardInput {
-                    state: ElementState::Pressed,
-                    virtual_keycode: Some(VirtualKeyCode::Space),
-                    ..
-                },
-                ..
-            } => {
-                self.use_challenge_render_pipeline = !self.use_challenge_render_pipeline;
-                true
-            }
+//            WindowEvent::CursorMoved { position, .. } => {
+//                let x = (position.x as f64) / self.size.width as f64;
+//                let y = (position.y as f64) / self.size.height as f64;
+//                self.clear_color = wgpu::Color { r: x, g: x, b: y, a: 1.0};
+//                true
+//            },
+//            WindowEvent::KeyboardInput {
+//                input: KeyboardInput {
+//                    state: ElementState::Pressed,
+//                    virtual_keycode: Some(VirtualKeyCode::Space),
+//                    ..
+//                },
+//                ..
+//            } => {
+//                self.use_pentagon = !self.use_pentagon;
+//                true
+//            }
             _ => false
         }
     }
@@ -288,7 +283,8 @@ impl State {
                         view: &frame.view, // draw to current screen
                         resolve_target: None, // no multisampling yet
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.clear_color),
+                            load: wgpu::LoadOp::Clear(
+                                wgpu::Color { r: 0.2, g: 0.5, b: 0.5, a: 1.0 }),
                             store: true,
                         }
                     }
@@ -296,18 +292,13 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
-        // set pipeline
-        /*
-        if self.use_challenge_render_pipeline {
-            render_pass.set_pipeline(&self.challenge_render_pipeline);
-        } else {
-            render_pass.set_pipeline(&self.render_pipeline);
-    }
-         */
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_bind_group(0, &self.aqua_bind_group, &[]);
         // draw triangle
-        render_pass.draw(0..self.num_vertices, 0..1);
+        render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+        //render_pass.draw(0..self.num_vertices, 0..1);
 
         // drop so encoder isn't borrowed mutually anymore
         drop(render_pass);

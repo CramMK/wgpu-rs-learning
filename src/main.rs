@@ -6,6 +6,7 @@ use winit::{
 
 mod state;
 mod vertex;
+mod texture;
 
 use crate::state::State;
 
