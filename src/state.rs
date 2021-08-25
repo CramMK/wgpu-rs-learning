@@ -7,8 +7,6 @@ use winit::{
     window::Window,
 };
 
-use crate::{texture, vertex::Vertex};
-
 /// Hold state with important information
 pub struct State {
     surface: wgpu::Surface,
@@ -19,7 +17,6 @@ pub struct State {
     swap_chain: wgpu::SwapChain,
     pub size: winit::dpi::PhysicalSize<u32>,
 
-
     render_pipeline: wgpu::RenderPipeline,
 
     vertex_buffer: wgpu::Buffer,
@@ -27,7 +24,14 @@ pub struct State {
     num_indices: u32,
 
     aqua_bind_group: wgpu::BindGroup,
-    aqua_texture: texture::Texture,
+    aqua_texture: crate::texture::Texture,
+
+    camera: crate::camera::Camera,
+    camera_controller: crate::camera_controller::CameraController,
+
+    uniform: crate::uniform::Uniform,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -79,7 +83,7 @@ impl State {
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
         let aqua_bytes = include_bytes!("../img/aqua.png");
-        let aqua_texture = texture::Texture::from_bytes(&device, &queue, aqua_bytes, "aqua").unwrap();
+        let aqua_texture = crate::texture::Texture::from_bytes(&device, &queue, aqua_bytes, "aqua").unwrap();
 
         let texture_bind_group_layout = device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
@@ -127,6 +131,61 @@ impl State {
             }
         );
 
+        let camera = crate::camera::Camera {
+            // x, y, z
+            // 1 up, 2 back
+            // +z is out of the screen
+            eye: (0.0, 1.0, 2.0).into(),
+            // look at the center
+            target: (0.0, 0.0, 0.0).into(),
+            // which way is up
+            up: cgmath::Vector3::unit_y(),
+            aspect: size.width as f32 / size.height as f32,
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
+
+        let camera_controller = crate::camera_controller::CameraController::new(0.05);
+
+        let mut uniform = crate::uniform::Uniform::new();
+        uniform.update_view_proj(&camera);
+
+        let uniform_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Uniform Buffer"),
+                contents: bytemuck::cast_slice(&[uniform]),
+                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            }
+        );
+
+        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("uniform_bind_group_layout"),
+        });
+
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &uniform_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                }
+            ],
+            label: Some("uniform_bind_group"),
+        });
+
         // load shader file
         let shader = device.create_shader_module(
             &wgpu::ShaderModuleDescriptor {
@@ -139,7 +198,10 @@ impl State {
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layput"),
-                bind_group_layouts: &[&texture_bind_group_layout],
+                bind_group_layouts: &[
+                    &texture_bind_group_layout,
+                    &uniform_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             }
         );
@@ -154,7 +216,7 @@ impl State {
                     // function name in shader.wgsl for [[stage(vertex)]]
                     entry_point: "main",
                     // specify memory layout
-                    buffers: &[Vertex::desc()],
+                    buffers: &[crate::vertex::Vertex::desc()],
 
                 },
                 // needed to sotre color data to swap_chain
@@ -212,15 +274,26 @@ impl State {
             surface,
             device,
             queue,
+
             sc_desc, // saved, so we can create a new swap_chain later
             swap_chain,
             size,
+
             render_pipeline,
+
             vertex_buffer,
             index_buffer,
             num_indices,
+
             aqua_bind_group,
             aqua_texture,
+
+            camera,
+            camera_controller,
+
+            uniform,
+            uniform_buffer,
+            uniform_bind_group,
         }
     }
 
@@ -254,12 +327,18 @@ impl State {
 //                self.use_pentagon = !self.use_pentagon;
 //                true
 //            }
-            _ => false
+            _ => self.camera_controller.process_events(event)
         }
     }
 
-    /// TODO
+    /// Update State before render()
     pub fn update(&mut self) {
+        // reposition camera
+        self.camera_controller.update_camera(&mut self.camera);
+        // update projection for uniform buffer
+        self.uniform.update_view_proj(&self.camera);
+        // write uniform buffer to queue
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 
     /// Generate commands for gpu to render to frame
@@ -296,6 +375,7 @@ impl State {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.set_bind_group(0, &self.aqua_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
         // draw triangle
         render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         //render_pass.draw(0..self.num_vertices, 0..1);

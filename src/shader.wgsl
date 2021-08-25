@@ -1,4 +1,12 @@
 // Vertex shader
+[[block]]
+struct Uniform {
+view_projection: mat4x4<f32>;
+};
+
+[[group(1), binding(0)]]
+var<uniform> uniform: Uniform;
+
 struct VertexInput {
 	[[location(0)]] position: vec3<f32>;
 	[[location(1)]] texture_coords: vec2<f32>;
@@ -12,7 +20,7 @@ struct VertexOutput {
 [[stage(vertex)]]
 fn main(model: VertexInput) -> VertexOutput {
 	var out: VertexOutput;
-	out.clip_coordinate = vec4<f32>(model.position, 1.0);
+	out.clip_coordinate = uniform.view_projection * vec4<f32>(model.position, 1.0);
 	out.texture_coords = model.texture_coords;
 	return out;
 }
