@@ -1,4 +1,4 @@
-use winit::{dpi::PhysicalPosition, event::*, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
+use winit::{event::*, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 
 mod state;
 mod vertex;
@@ -15,8 +15,8 @@ fn main() {
     let mut window = WindowBuilder::new()
         .build(&event_loop)
         .unwrap();
-    //window.set_cursor_visible(false);
-    //window.set_cursor_grab(true).unwrap();
+    window.set_cursor_visible(false);
+    window.set_cursor_grab(true).unwrap();
 
     // wait until Future is ready
     let mut state = pollster::block_on(State::new(&window));

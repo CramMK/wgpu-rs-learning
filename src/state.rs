@@ -324,23 +324,6 @@ impl State {
             WindowEvent::ScaleFactorChanged {new_inner_size, ..} => {
                 self.resize(**new_inner_size);
             },
-//            WindowEvent::CursorMoved { position, .. } => {
-//                let x = (position.x as f64) / self.size.width as f64;
-//                let y = (position.y as f64) / self.size.height as f64;
-//                self.clear_color = wgpu::Color { r: x, g: x, b: y, a: 1.0};
-//                true
-//            },
-//            WindowEvent::KeyboardInput {
-//                input: KeyboardInput {
-//                    state: ElementState::Pressed,
-//                    virtual_keycode: Some(VirtualKeyCode::Space),
-//                    ..
-//                },
-//                ..
-//            } => {
-//                self.use_pentagon = !self.use_pentagon;
-//                true
-//            }
             _ => self.camera_controller.input(event)
         }
     }

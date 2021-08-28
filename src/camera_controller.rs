@@ -2,6 +2,8 @@ use cgmath::Vector2;
 use cgmath::Point3;
 use winit::{dpi::PhysicalPosition, event::*};
 
+const MOUSE_SLOWDOWN: f32 = 100.0;
+
 #[derive(Debug)]
 enum ButtonPress {
     Up(ElementState),
@@ -80,6 +82,7 @@ impl CameraController {
     /// Vectors are casted from (0, 0, 0) to both the target and the eye
     pub fn update_camera(&mut self, camera: &mut crate::camera::Camera) {
         // TODO what about delta time?
+        // TODO this still feels a bit chunky...
         use cgmath::InnerSpace;
         // Casted eye -> target
         let forward = camera.target - camera.eye;
@@ -130,9 +133,8 @@ impl CameraController {
         // mouse movement:
         // target moves
         // eye stays in place
-        let decr = 200.0;
-        camera.target.x += (self.mouse_movement.x as f32) / decr;
-        camera.target.y -= (self.mouse_movement.y as f32) / decr;
+        camera.target.x += (self.mouse_movement.x as f32) / MOUSE_SLOWDOWN;
+        camera.target.y -= (self.mouse_movement.y as f32) / MOUSE_SLOWDOWN;
         self.mouse_movement = Vector2 { x: 0.0, y: 0.0 };
 
         dbg!(&camera.eye);
