@@ -2,10 +2,7 @@ use wgpu::{
     PrimitiveTopology,
     util::DeviceExt,
 };
-use winit::{
-    event::*,
-    window::Window,
-};
+use winit::{dpi::PhysicalPosition, event::*, window::Window, event_loop::{ControlFlow}};
 
 /// Hold state with important information
 pub struct State {
@@ -135,7 +132,7 @@ impl State {
             // x, y, z
             // 1 up, 2 back
             // +z is out of the screen
-            eye: (0.0, 1.0, 2.0).into(),
+            eye: (0.0, 0.0, 2.0).into(),
             // look at the center
             target: (0.0, 0.0, 0.0).into(),
             // which way is up
@@ -307,9 +304,26 @@ impl State {
         }
     }
 
-    /// Idicate, whether an event has been fully processed
-    pub fn input(&mut self, event: &WindowEvent) -> bool {
+    /// Process input of the WindowEvent
+    pub fn input(&mut self, event: &WindowEvent, control_flow: &mut ControlFlow) {
         match event {
+            WindowEvent::CloseRequested |
+            WindowEvent::KeyboardInput {
+                input: KeyboardInput {
+                    state: ElementState::Pressed,
+                    virtual_keycode: Some(VirtualKeyCode::Escape),
+                    // ignore the other entries
+                    ..
+                },
+                // ignore the other entries
+                ..
+            } => *control_flow = ControlFlow::Exit,
+            WindowEvent::Resized(physical_size) => {
+                self.resize(*physical_size)
+            },
+            WindowEvent::ScaleFactorChanged {new_inner_size, ..} => {
+                self.resize(**new_inner_size);
+            },
 //            WindowEvent::CursorMoved { position, .. } => {
 //                let x = (position.x as f64) / self.size.width as f64;
 //                let y = (position.y as f64) / self.size.height as f64;
@@ -327,14 +341,20 @@ impl State {
 //                self.use_pentagon = !self.use_pentagon;
 //                true
 //            }
-            _ => self.camera_controller.process_events(event)
+            _ => self.camera_controller.input(event)
         }
     }
 
     /// Update State before render()
-    pub fn update(&mut self) {
+    pub fn update(&mut self, window: &mut winit::window::Window) {
         // reposition camera
         self.camera_controller.update_camera(&mut self.camera);
+        // always move cursor back to center after controller update,
+        // so we don't loose it
+        window.set_cursor_position(PhysicalPosition::new(
+            self.size.width / 2,
+            self.size.height / 2,
+        )).unwrap();
         // update projection for uniform buffer
         self.uniform.update_view_proj(&self.camera);
         // write uniform buffer to queue

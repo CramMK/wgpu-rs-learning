@@ -1,27 +1,23 @@
-use winit::event::*;
-
-#[derive(Debug)]
-struct IsPressed(bool);
-
-impl From<bool> for IsPressed {
-    fn from(item: bool) -> Self {
-        IsPressed(item)
-    }
-}
+use cgmath::Vector2;
+use cgmath::Point3;
+use winit::{dpi::PhysicalPosition, event::*};
 
 #[derive(Debug)]
 enum ButtonPress {
-    Up(IsPressed),
-    Down(IsPressed),
-    Left(IsPressed),
-    Right(IsPressed),
-    Forward(IsPressed),
-    Backward(IsPressed),
+    Up(ElementState),
+    Down(ElementState),
+    Left(ElementState),
+    Right(ElementState),
+    Forward(ElementState),
+    Backward(ElementState),
+    Reset(ElementState),
 }
 
 pub struct CameraController {
     speed: f32,
     button_press: Option<ButtonPress>,
+    old_mouse: PhysicalPosition<f64>,
+    mouse_movement: Vector2<f64>,
 }
 
 impl CameraController {
@@ -29,10 +25,12 @@ impl CameraController {
         Self {
             speed,
             button_press: None,
+            old_mouse: PhysicalPosition::new(0.0, 0.0),
+            mouse_movement: Vector2::new(0.0, 0.0),
         }
     }
 
-    pub fn process_events(&mut self, event: &WindowEvent) -> bool {
+    pub fn input(&mut self, event: &WindowEvent) {
         match event {
             WindowEvent::KeyboardInput {
                 input:
@@ -42,55 +40,103 @@ impl CameraController {
                         ..
                     },
                 ..
-            } => {
-                let pressed = (*state == ElementState::Pressed).into();
-                match key {
-                    VirtualKeyCode::W => {
-                        self.button_press = Some(ButtonPress::Forward(pressed));
-                        true
-                    }
-                    VirtualKeyCode::A => {
-                        self.button_press = Some(ButtonPress::Left(pressed));
-                        true
-                    }
-                    VirtualKeyCode::S => {
-                        self.button_press = Some(ButtonPress::Backward(pressed));
-                        true
-                    }
-                    VirtualKeyCode::D => {
-                        self.button_press = Some(ButtonPress::Right(pressed));
-                        true
-                    }
-                    VirtualKeyCode::Space => {
-                        self.button_press = Some(ButtonPress::Up(pressed));
-                        true
-                    }
-                    VirtualKeyCode::LShift => {
-                        self.button_press = Some(ButtonPress::Down(pressed));
-                        true
-                    }
-                    _ => false,
+            } => match key {
+                VirtualKeyCode::W => {
+                    self.button_press = Some(ButtonPress::Forward(*state));
                 }
+                VirtualKeyCode::A => {
+                    self.button_press = Some(ButtonPress::Left(*state));
+                }
+                VirtualKeyCode::S => {
+                    self.button_press = Some(ButtonPress::Backward(*state));
+                }
+                VirtualKeyCode::D => {
+                    self.button_press = Some(ButtonPress::Right(*state));
+                }
+                VirtualKeyCode::Space => {
+                    self.button_press = Some(ButtonPress::Up(*state));
+                }
+                VirtualKeyCode::LShift => {
+                    self.button_press = Some(ButtonPress::Down(*state));
+                }
+                VirtualKeyCode::Return => {
+                    self.button_press = Some(ButtonPress::Reset(*state));
+                }
+                _ => {},
+            },
+            WindowEvent::CursorMoved { position, .. } => {
+                self.mouse_movement = Vector2 {
+                    x: (*position).x - self.old_mouse.x,
+                    y: (*position).y - self.old_mouse.y,
+                };
+
+                self.old_mouse = *position;
             }
-            _ => false,
+            _ => {},
         }
     }
 
-    pub fn update_camera(&self, camera: &mut crate::camera::Camera) {
+    /// Update the camera vectors
+    /// Vectors are casted from (0, 0, 0) to both the target and the eye
+    pub fn update_camera(&mut self, camera: &mut crate::camera::Camera) {
+        // TODO what about delta time?
         use cgmath::InnerSpace;
+        // Casted eye -> target
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
         let forward_mag = forward.magnitude();
 
+        // cross product of forwards and up => perpendicular right
+        let right = forward_norm.cross(camera.up);
+        let right_norm = right.normalize();
+
         match self.button_press {
-            Some(ButtonPress::Forward(IsPressed(true))) if forward_mag > self.speed => {
+            // keyboard buttons:
+            // target stays in place
+            // eye moves
+            // check movement vector, if too close
+            Some(ButtonPress::Forward(ElementState::Pressed)) if forward_mag > self.speed => {
                 camera.eye += forward_norm * self.speed;
             }
-            Some(ButtonPress::Backward(IsPressed(true))) => {
+            Some(ButtonPress::Backward(ElementState::Pressed)) => {
                 camera.eye -= forward_norm * self.speed;
+            }
+            Some(ButtonPress::Right(ElementState::Pressed)) => {
+                let vector = right_norm * self.speed;
+                camera.eye += vector;
+                camera.target += vector;
+            }
+            Some(ButtonPress::Left(ElementState::Pressed)) => {
+                let vector = right_norm * self.speed;
+                camera.eye -= vector;
+                camera.target -= vector;
+            }
+            Some(ButtonPress::Up(ElementState::Pressed)) => {
+                let vector = camera.up.normalize() * self.speed;
+                camera.eye += vector;
+                camera.target += vector;
+            }
+            Some(ButtonPress::Down(ElementState::Pressed)) => {
+                let vector = camera.up.normalize() * self.speed;
+                camera.eye -= vector;
+                camera.target -= vector;
+            }
+            Some(ButtonPress::Reset(ElementState::Pressed)) => {
+                camera.target = Point3::new(0.0, 0.0, 0.0);
             }
             _ => {}
         }
-        // TODO add rest of the movement
+
+        // mouse movement:
+        // target moves
+        // eye stays in place
+        let decr = 200.0;
+        camera.target.x += (self.mouse_movement.x as f32) / decr;
+        camera.target.y -= (self.mouse_movement.y as f32) / decr;
+        self.mouse_movement = Vector2 { x: 0.0, y: 0.0 };
+
+        dbg!(&camera.eye);
+        dbg!(&camera.target);
+        dbg!(self.mouse_movement);
     }
 }

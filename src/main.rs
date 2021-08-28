@@ -1,8 +1,4 @@
-use winit::{
-    event::*,
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-};
+use winit::{dpi::PhysicalPosition, event::*, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 
 mod state;
 mod vertex;
@@ -16,7 +12,12 @@ use crate::state::State;
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let mut window = WindowBuilder::new()
+        .build(&event_loop)
+        .unwrap();
+    //window.set_cursor_visible(false);
+    //window.set_cursor_grab(true).unwrap();
+
     // wait until Future is ready
     let mut state = pollster::block_on(State::new(&window));
 
@@ -24,33 +25,14 @@ fn main() {
         Event::WindowEvent {
             ref event, // forward event
             window_id
-        } if window_id == window.id() // be sure to only use the current one
-            => if !state.input(event) { // don't continue if input hasn't been processed yet
-                match event {
-                    // TODO can't this be moved to state.input()
-                    WindowEvent::CloseRequested |
-                    WindowEvent::KeyboardInput {
-                        input: KeyboardInput {
-                            state: ElementState::Pressed,
-                            virtual_keycode: Some(VirtualKeyCode::Escape),
-                            // ignore the other entries
-                            ..
-                        },
-                        // ignore the other entries
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-                    WindowEvent::Resized(physical_size) => {
-                        state.resize(*physical_size)
-                    },
-                    WindowEvent::ScaleFactorChanged {new_inner_size, ..} => {
-                        state.resize(**new_inner_size);
-                    },
-                    // Discard all other WindowEvents
-                    _ => {}
-                }
-            },
+        } if window_id == window.id() => {
+            state.input(event, control_flow);
+        }
         Event::RedrawRequested(_) => {
-            state.update();
+            // update the entire scene
+            state.update(&mut window);
+
+            // render the update
             match state.render() {
                 Ok(_) => {},
                 // recreate swap_chain
